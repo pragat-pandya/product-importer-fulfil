@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from config import settings
 from app.db import get_db, close_db
+from app.api.celery_routes import router as celery_router
 
 
 @asynccontextmanager
@@ -48,6 +49,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(celery_router, prefix=settings.API_V1_PREFIX)
 
 
 # Health Check Endpoints

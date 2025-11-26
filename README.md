@@ -42,6 +42,28 @@ docker-compose up
 - API Docs: http://localhost:8000/api/docs
 - Health Check: http://localhost:8000/health
 
+## Features
+
+### ✅ Completed
+
+#### Database Layer
+- SQLAlchemy 2.0 with async support
+- PostgreSQL 15 with asyncpg driver
+- Product model with case-insensitive unique SKU
+- Alembic migrations configured
+
+#### Celery Background Tasks
+- Celery worker running in Docker
+- Redis as broker and result backend
+- Task auto-discovery from `app/tasks/`
+- API endpoints for task management:
+  - `GET /api/v1/celery/workers` - View active workers
+  - `POST /api/v1/celery/test` - Submit test task
+  - `GET /api/v1/celery/task/{id}` - Check task status
+  - `DELETE /api/v1/celery/task/{id}` - Cancel task
+
+See [CELERY_SETUP.md](./CELERY_SETUP.md) for detailed Celery documentation.
+
 ### Services
 
 | Service | Port | Description |

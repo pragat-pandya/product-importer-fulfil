@@ -77,7 +77,7 @@ services:
         condition: service_healthy
     networks:
       - fulfil_network
-    command: celery -A celery_app.celery_worker worker --loglevel=info
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
 
 volumes:
   postgres_data:

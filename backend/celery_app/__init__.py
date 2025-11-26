@@ -1,4 +1,0 @@
-"""
-Celery Application Package
-"""
-
