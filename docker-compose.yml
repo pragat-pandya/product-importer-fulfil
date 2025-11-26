@@ -1,0 +1,89 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: fulfil_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fulfil_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fulfil_password}
+      POSTGRES_DB: ${POSTGRES_DB:-fulfil_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fulfil_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fulfil_network
+
+  # Redis (for Celery)
+  redis:
+    image: redis:7-alpine
+    container_name: fulfil_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fulfil_network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fulfil_backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fulfil_user}:${POSTGRES_PASSWORD:-fulfil_password}@postgres:5432/${POSTGRES_DB:-fulfil_db}
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - fulfil_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fulfil_worker
+    volumes:
+      - ./backend:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-fulfil_user}:${POSTGRES_PASSWORD:-fulfil_password}@postgres:5432/${POSTGRES_DB:-fulfil_db}
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - fulfil_network
+    command: celery -A celery_app.celery_worker worker --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  fulfil_network:
+    driver: bridge
+
