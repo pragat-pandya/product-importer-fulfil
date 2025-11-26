@@ -64,6 +64,20 @@ docker-compose up
 
 See [CELERY_SETUP.md](./CELERY_SETUP.md) for detailed Celery documentation.
 
+#### CSV Product Import
+- Async CSV processing with Celery
+- Memory-efficient chunked reading (handles 500k+ rows)
+- Case-insensitive SKU upsert logic
+- Real-time progress tracking via Redis
+- Row-level validation and error reporting
+- API endpoints:
+  - `POST /api/v1/products/upload` - Upload CSV file
+  - `GET /api/v1/products/upload/{id}/status` - Check status (simplified)
+  - `GET /api/v1/products/import/{id}/progress` - Check progress (detailed)
+  - `GET /api/v1/products/import/{id}/result` - Get final results
+
+See [CSV_IMPORT_GUIDE.md](./CSV_IMPORT_GUIDE.md) for detailed CSV import documentation.
+
 ### Services
 
 | Service | Port | Description |

@@ -1,10 +1,15 @@
 """
 Product-related Celery Tasks
 """
+import json
 from typing import Any, Dict
+from pathlib import Path
 from celery import Task
+import redis
 
 from app.core.celery_app import celery_app
+from app.services.import_service import ImportService
+from config import settings
 
 
 class DatabaseTask(Task):
@@ -46,23 +51,26 @@ def test_task(self) -> Dict[str, Any]:
 @celery_app.task(
     bind=True,
     base=DatabaseTask,
-    name="app.tasks.product_tasks.process_csv_import",
+    name="app.tasks.product_tasks.process_csv_upload",
     max_retries=3,
     default_retry_delay=300,  # 5 minutes
     time_limit=3600,  # 1 hour
     soft_time_limit=3300,  # 55 minutes
 )
-def process_csv_import(
+def process_csv_upload(
     self,
     file_path: str,
     user_id: str | None = None,
     options: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
     """
-    Process CSV file import in the background.
+    Process CSV file upload and import products.
     
-    This is a placeholder for the actual CSV processing logic.
-    Will be implemented in a future iteration.
+    Features:
+    - Chunked CSV reading for memory efficiency
+    - Case-insensitive SKU upsert logic
+    - Progress tracking in Redis
+    - Detailed error reporting
     
     Args:
         file_path: Path to the CSV file to process
@@ -72,43 +80,118 @@ def process_csv_import(
     Returns:
         Dict with processing results
     """
+    # Initialize Redis for progress tracking
+    redis_client = redis.from_url(str(settings.REDIS_URL))
+    task_id = self.request.id
+    progress_key = f"celery-task-progress:{task_id}"
+    
+    def update_progress(stats: Dict[str, Any]):
+        """Update progress in Redis and Celery state."""
+        progress_data = {
+            "task_id": task_id,
+            "status": "PROGRESS",
+            "current": stats['processed_rows'],
+            "total": stats['total_rows'],
+            "created": stats['created'],
+            "updated": stats['updated'],
+            "errors": stats['errors'],
+            "percent": int((stats['processed_rows'] / stats['total_rows'] * 100)) if stats['total_rows'] > 0 else 0,
+        }
+        
+        # Store in Redis (expires in 1 hour)
+        redis_client.setex(
+            progress_key,
+            3600,
+            json.dumps(progress_data)
+        )
+        
+        # Update Celery state
+        self.update_state(
+            state="PROGRESS",
+            meta=progress_data
+        )
+    
     try:
-        # Update task state to PROGRESS
+        # Validate file exists
+        if not Path(file_path).exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # Initialize progress
         self.update_state(
             state="PROGRESS",
             meta={
+                "task_id": task_id,
+                "status": "PROGRESS",
                 "current": 0,
-                "total": 100,
-                "status": "Starting CSV import...",
+                "total": 0,
+                "message": "Starting CSV import...",
             }
         )
         
-        # TODO: Implement actual CSV processing logic here
-        # This will include:
-        # 1. Reading the CSV file
-        # 2. Validating rows
-        # 3. Processing products (insert/update)
-        # 4. Handling duplicates (case-insensitive SKU)
-        # 5. Error handling and reporting
+        # Create import service and process file
+        import_service = ImportService()
+        
+        # Use asyncio to run the async function
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        result = loop.run_until_complete(
+            import_service.process_csv_file(
+                file_path=file_path,
+                progress_callback=update_progress
+            )
+        )
+        
+        # Final progress update
+        final_progress = {
+            "task_id": task_id,
+            "status": "SUCCESS",
+            "current": result['processed_rows'],
+            "total": result['total_rows'],
+            "created": result['created'],
+            "updated": result['updated'],
+            "errors": result['errors'],
+            "percent": 100,
+        }
+        redis_client.setex(progress_key, 3600, json.dumps(final_progress))
+        
+        # Clean up file after successful processing
+        try:
+            Path(file_path).unlink()
+        except Exception as e:
+            print(f"⚠️  Failed to delete temp file: {e}")
         
         return {
             "status": "success",
-            "message": "CSV import completed (placeholder)",
-            "task_id": self.request.id,
+            "message": "CSV import completed successfully",
+            "task_id": task_id,
             "file_path": file_path,
             "user_id": user_id,
-            "processed_rows": 0,
-            "created": 0,
-            "updated": 0,
-            "errors": 0,
+            **result
         }
         
     except Exception as exc:
         # Log the error
-        print(f"❌ Error processing CSV import: {exc}")
+        error_msg = str(exc)
+        print(f"❌ Error processing CSV import: {error_msg}")
         
-        # Retry the task
-        raise self.retry(exc=exc)
+        # Update Redis with error
+        error_data = {
+            "task_id": task_id,
+            "status": "FAILURE",
+            "error": error_msg,
+        }
+        redis_client.setex(progress_key, 3600, json.dumps(error_data))
+        
+        # Retry the task if possible
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        else:
+            raise
 
 
 @celery_app.task(
