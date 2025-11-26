@@ -162,8 +162,8 @@ def process_csv_upload(
         # Clean up file after successful processing
         try:
             Path(file_path).unlink()
-        except Exception as e:
-            print(f"⚠️  Failed to delete temp file: {e}")
+        except Exception:
+            pass
         
         return {
             "status": "success",
@@ -175,9 +175,8 @@ def process_csv_upload(
         }
         
     except Exception as exc:
-        # Log the error
+        # Get error message
         error_msg = str(exc)
-        print(f"❌ Error processing CSV import: {error_msg}")
         
         # Update Redis with error
         error_data = {
@@ -333,9 +332,8 @@ def bulk_delete_products(self) -> Dict[str, Any]:
         }
         
     except Exception as exc:
-        # Log the error
+        # Get error message
         error_msg = str(exc)
-        print(f"❌ Error in bulk delete: {error_msg}")
         
         # Update Redis with error
         error_data = {

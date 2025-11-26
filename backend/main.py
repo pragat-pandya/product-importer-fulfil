@@ -20,16 +20,7 @@ async def lifespan(app: FastAPI):
     """
     Lifespan context manager for startup and shutdown events.
     """
-    # Startup
-    print(f"🚀 Starting {settings.APP_NAME}")
-    print(f"📦 Environment: {settings.ENVIRONMENT}")
-    print(f"🗄️  Database: {str(settings.DATABASE_URL).split('@')[1] if '@' in str(settings.DATABASE_URL) else 'configured'}")
-    print(f"🔴 Redis: {str(settings.REDIS_URL).split('@')[1] if '@' in str(settings.REDIS_URL) else 'configured'}")
-    
     yield
-    
-    # Shutdown
-    print(f"👋 Shutting down {settings.APP_NAME}")
     await close_db()
 
 

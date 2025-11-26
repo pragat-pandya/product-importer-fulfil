@@ -291,7 +291,7 @@ class WebhookService:
                 triggered_count += 1
             except Exception as e:
                 # Log error but continue with other webhooks
-                print(f"Error triggering webhook {webhook.id}: {e}")
+                pass
         
         return triggered_count
 

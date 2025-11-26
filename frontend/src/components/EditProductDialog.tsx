@@ -78,7 +78,6 @@ const EditProductDialog: React.FC<EditProductDialogProps> = ({
       onOpenChange(false);
     } catch (error) {
       // Error is handled by the hook
-      console.error('Failed to update product:', error);
     }
   };
 

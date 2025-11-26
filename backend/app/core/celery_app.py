@@ -79,9 +79,7 @@ def on_worker_ready(sender, **kwargs):
     """
     Signal handler when worker is ready.
     """
-    print("🎉 Celery worker is ready and waiting for tasks!")
-    print(f"📦 Broker: {settings.CELERY_BROKER_URL}")
-    print(f"📊 Backend: {settings.CELERY_RESULT_BACKEND}")
+    pass
 
 
 @worker_shutdown.connect
@@ -89,7 +87,7 @@ def on_worker_shutdown(sender, **kwargs):
     """
     Signal handler when worker is shutting down.
     """
-    print("👋 Celery worker is shutting down...")
+    pass
 
 
 # Expose for imports

@@ -87,7 +87,6 @@ export function ProductUpload() {
         }
       }
     } catch (error) {
-      console.error('Error polling status:', error);
     }
   };
 

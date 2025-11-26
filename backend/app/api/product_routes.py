@@ -282,12 +282,12 @@ async def get_upload_status(task_id: str) -> TaskStatusResponse:
                     message=data.get('message'),
                     error=data.get('error')
                 )
-        except redis.RedisError as e:
-            # Redis error - log it but continue to Celery fallback
-            print(f"⚠️  Redis error: {e}")
-        except json.JSONDecodeError as e:
-            # Invalid JSON in Redis - log and continue
-            print(f"⚠️  Invalid JSON in Redis: {e}")
+        except redis.RedisError:
+            # Redis error - continue to Celery fallback
+            pass
+        except json.JSONDecodeError:
+            # Invalid JSON in Redis - continue to Celery fallback
+            pass
         
         # Fallback to Celery result backend
         try:
@@ -367,8 +367,7 @@ async def get_upload_status(task_id: str) -> TaskStatusResponse:
                 )
                 
         except Exception as celery_error:
-            # Celery error - log and return error response
-            print(f"❌ Celery error: {celery_error}")
+            # Celery error - return error response
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to retrieve task status from Celery: {str(celery_error)}"
@@ -382,7 +381,6 @@ async def get_upload_status(task_id: str) -> TaskStatusResponse:
         )
     except Exception as e:
         # Catch-all for unexpected errors
-        print(f"❌ Unexpected error in get_upload_status: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"An unexpected error occurred: {str(e)}"
@@ -687,8 +685,8 @@ async def get_bulk_delete_status(task_id: str) -> Dict[str, Any]:
                     "deleted_count": data.get('deleted_count'),
                     "error": data.get('error'),
                 }
-        except (redis.RedisError, json.JSONDecodeError) as e:
-            print(f"⚠️  Redis error: {e}")
+        except (redis.RedisError, json.JSONDecodeError):
+            pass
         
         # Fallback to Celery result backend
         from app.core.celery_app import celery_app
