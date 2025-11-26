@@ -2,11 +2,14 @@
 FastAPI Application Entry Point
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from config import settings
+from app.db import get_db, close_db
 
 
 @asynccontextmanager
@@ -24,6 +27,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print(f"👋 Shutting down {settings.APP_NAME}")
+    await close_db()
 
 
 # Initialize FastAPI application
@@ -73,13 +77,19 @@ async def health_check():
 
 
 @app.get(f"{settings.API_V1_PREFIX}/hello", tags=["Demo"])
-async def hello_world():
-    """Demo hello-world endpoint"""
+async def hello_world(db: AsyncSession = Depends(get_db)):
+    """Demo hello-world endpoint with database connectivity check"""
+    try:
+        # Test database connection
+        result = await db.execute(text("SELECT 1"))
+        db_status = "connected" if result else "error"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
     return JSONResponse(
         content={
             "message": "Hello from FulFil! 👋",
-            "database": "connected" if settings.DATABASE_URL else "not configured",
+            "database": db_status,
             "redis": "connected" if settings.REDIS_URL else "not configured",
         }
     )
-
