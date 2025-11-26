@@ -11,12 +11,15 @@ High-performance Product Importer application with async CSV processing capabili
 - **Celery + Redis** - Background task processing
 - **Python 3.11** - Runtime
 
-### Frontend (Coming Soon)
-- **React + Vite + TypeScript**
-- **shadcn/ui** - UI components
-- **TailwindCSS** - Styling
-- **Framer Motion** - Animations
-- **TanStack Query** - State management
+### Frontend
+- **React 19 + Vite + TypeScript** - Modern build tooling
+- **shadcn/ui** - Beautiful UI components
+- **TailwindCSS 3** - Utility-first styling
+- **Framer Motion** - Smooth animations
+- **TanStack Query v5** - Server state management
+- **React Router** - Client-side routing
+- **Axios** - HTTP client
+- **Lucide React** - Icon library
 
 ## Getting Started
 
@@ -37,7 +40,15 @@ cp .env.example .env
 docker-compose up
 ```
 
-3. **Access the application**
+3. **Start the frontend** (in a new terminal)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+4. **Access the application**
+- Frontend: http://localhost:5173
 - API: http://localhost:8000
 - API Docs: http://localhost:8000/api/docs
 - Health Check: http://localhost:8000/health
@@ -82,6 +93,7 @@ See [CSV_IMPORT_GUIDE.md](./CSV_IMPORT_GUIDE.md) for detailed CSV import documen
 
 | Service | Port | Description |
 |---------|------|-------------|
+| Frontend | 5173 | React application (dev) |
 | Backend | 8000 | FastAPI application |
 | PostgreSQL | 5432 | Database |
 | Redis | 6379 | Celery broker |
@@ -117,15 +129,32 @@ docker-compose down -v
 
 ```
 fulFil/
-├── backend/              # FastAPI application
-│   ├── celery_app/      # Celery worker and tasks
-│   ├── config.py        # Configuration management
-│   ├── main.py          # FastAPI entry point
-│   ├── Dockerfile       # Backend container
-│   └── requirements.txt # Python dependencies
-├── docker-compose.yml   # Multi-container orchestration
-├── .env                 # Environment variables
-└── README.md           # This file
+├── frontend/                # React application
+│   ├── src/
+│   │   ├── components/     # UI components
+│   │   ├── pages/          # Page components
+│   │   ├── lib/            # Utilities & API
+│   │   ├── App.tsx         # Main app
+│   │   └── main.tsx        # Entry point
+│   ├── tailwind.config.js  # Tailwind config
+│   ├── vite.config.ts      # Vite config
+│   └── package.json        # Node dependencies
+├── backend/                 # FastAPI application
+│   ├── app/
+│   │   ├── api/            # API routes
+│   │   ├── core/           # Core components
+│   │   ├── db/             # Database
+│   │   ├── models/         # SQLAlchemy models
+│   │   ├── services/       # Business logic
+│   │   └── tasks/          # Celery tasks
+│   ├── alembic/            # Database migrations
+│   ├── config.py           # Configuration
+│   ├── main.py             # FastAPI entry point
+│   ├── Dockerfile          # Backend container
+│   └── requirements.txt    # Python dependencies
+├── docker-compose.yml      # Multi-container orchestration
+├── .env                    # Environment variables
+└── README.md              # This file
 ```
 
 ## Environment Variables
