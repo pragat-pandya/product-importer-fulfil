@@ -5,6 +5,7 @@ import { Layout } from './components/layout/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Upload } from './pages/Upload';
 import Products from './pages/Products';
+import Webhooks from './pages/Webhooks';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/products" element={<Products />} />
+            <Route path="/webhooks" element={<Webhooks />} />
             <Route path="/tasks" element={<div>Tasks Page - Coming Soon</div>} />
             <Route path="/settings" element={<div>Settings Page - Coming Soon</div>} />
           </Routes>

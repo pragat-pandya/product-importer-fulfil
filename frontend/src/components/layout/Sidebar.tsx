@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Upload,
   Package,
+  Webhook,
   Settings,
   Activity,
 } from 'lucide-react';
@@ -13,6 +14,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Upload', href: '/upload', icon: Upload },
   { name: 'Products', href: '/products', icon: Package },
+  { name: 'Webhooks', href: '/webhooks', icon: Webhook },
   { name: 'Tasks', href: '/tasks', icon: Activity },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
