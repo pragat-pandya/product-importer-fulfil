@@ -89,6 +89,16 @@ See [CELERY_SETUP.md](./CELERY_SETUP.md) for detailed Celery documentation.
 
 See [CSV_IMPORT_GUIDE.md](./CSV_IMPORT_GUIDE.md) for detailed CSV import documentation.
 
+#### Frontend Upload Interface
+- Drag-and-drop file upload with react-dropzone
+- Real-time progress tracking (1-second polling)
+- Animated progress bar with Framer Motion
+- Status badges and toast notifications
+- File validation (CSV only, max 100MB)
+- Stats display (Created/Updated/Errors)
+
+See [UPLOAD_FEATURE.md](./UPLOAD_FEATURE.md) for detailed upload UI documentation.
+
 ### Services
 
 | Service | Port | Description |

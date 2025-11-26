@@ -1,0 +1,4 @@
+sku,name,description,active
+UI-TEST-001,UI Test Product 1,Testing the upload UI,true
+UI-TEST-002,UI Test Product 2,Second test product,true
+UI-TEST-003,UI Test Product 3,Third test product,false
