@@ -5,7 +5,7 @@ Handles CSV file reading, validation, and product upsert operations.
 """
 import csv
 from pathlib import Path
-from typing import Dict, Any, List, Generator, Optional
+from typing import Dict, Any, List, Generator, Optional, Callable
 from datetime import datetime
 import pandas as pd
 from sqlalchemy import insert, func, select
@@ -56,16 +56,38 @@ class ImportService:
             DataFrame chunks
         """
         try:
-            # Try pandas first (faster for large files)
-            for chunk in pd.read_csv(
-                file_path,
-                chunksize=chunk_size,
-                encoding='utf-8',
-                dtype=str,  # Read all as strings initially
-                na_values=['', 'NULL', 'null', 'None'],
-                keep_default_na=True,
-            ):
-                yield chunk
+            # Try pandas C engine first (faster for large files)
+            # Use on_bad_lines='skip' to handle rows with incorrect number of fields
+            # This can happen when fields contain unquoted commas
+            try:
+                for chunk in pd.read_csv(
+                    file_path,
+                    chunksize=chunk_size,
+                    encoding='utf-8',
+                    dtype=str,  # Read all as strings initially
+                    na_values=['', 'NULL', 'null', 'None'],
+                    keep_default_na=True,
+                    on_bad_lines='skip',  # Skip malformed lines instead of raising error
+                    quotechar='"',  # Standard CSV quote character
+                    skipinitialspace=True,
+                ):
+                    yield chunk
+            except (pd.errors.ParserError, ValueError) as e:
+                # If C engine fails, try Python engine which is more forgiving
+                # Python engine can handle inconsistent field counts better
+                for chunk in pd.read_csv(
+                    file_path,
+                    chunksize=chunk_size,
+                    encoding='utf-8',
+                    dtype=str,
+                    na_values=['', 'NULL', 'null', 'None'],
+                    keep_default_na=True,
+                    on_bad_lines='skip',
+                    quotechar='"',
+                    skipinitialspace=True,
+                    engine='python',  # More forgiving engine
+                ):
+                    yield chunk
         except Exception as e:
             # Fallback to standard csv module
             raise ValueError(f"Failed to read CSV file: {str(e)}")
@@ -83,7 +105,27 @@ class ImportService:
         """
         try:
             # Read first chunk to check structure
-            df = pd.read_csv(file_path, nrows=1)
+            # Use same parameters as read_csv_chunks for consistency
+            try:
+                df = pd.read_csv(
+                    file_path,
+                    nrows=1,
+                    encoding='utf-8',
+                    on_bad_lines='skip',
+                    quotechar='"',
+                    skipinitialspace=True,
+                )
+            except (pd.errors.ParserError, ValueError):
+                # Fallback to Python engine if C engine fails
+                df = pd.read_csv(
+                    file_path,
+                    nrows=1,
+                    encoding='utf-8',
+                    on_bad_lines='skip',
+                    quotechar='"',
+                    skipinitialspace=True,
+                    engine='python',
+                )
             columns = [col.strip().lower() for col in df.columns]
             
             # Check for required columns
@@ -227,7 +269,7 @@ class ImportService:
     async def process_csv_file(
         self,
         file_path: str,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
         Process a CSV file and import products.
