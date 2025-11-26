@@ -10,6 +10,7 @@ import { WebhooksDataTable } from '@/components/WebhooksDataTable';
 import { CreateWebhookDialog } from '@/components/CreateWebhookDialog';
 import { EditWebhookDialog } from '@/components/EditWebhookDialog';
 import type { Webhook } from '@/types/webhook';
+import { PageTransition } from '@/components/PageTransition';
 
 export const Webhooks: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -27,7 +28,8 @@ export const Webhooks: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6">
+    <PageTransition>
+    <div className="flex-1 space-y-4 p-4 md:p-8 pt-4 md:pt-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -147,6 +149,7 @@ export const Webhooks: React.FC = () => {
         onOpenChange={handleEditDialogClose}
       />
     </div>
+    </PageTransition>
   );
 };
 

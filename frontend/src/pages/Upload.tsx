@@ -1,10 +1,12 @@
 import { motion } from 'framer-motion';
 import { Upload as UploadIcon, FileUp, AlertCircle } from 'lucide-react';
 import { ProductUpload } from '@/components/ProductUpload';
+import { PageTransition } from '@/components/PageTransition';
 
 export function Upload() {
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <PageTransition>
+    <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -95,6 +97,7 @@ PROD-003,Widget Max,Maximum performance widget,false
         <ProductUpload />
       </motion.div>
     </div>
+    </PageTransition>
   );
 }
 

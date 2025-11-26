@@ -40,6 +40,7 @@ import { useDeleteWebhook, useWebhooks, useTestWebhook } from '@/hooks/useWebhoo
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { TableSkeleton } from '@/components/TableSkeleton';
 
 interface WebhooksDataTableProps {
   initialLimit?: number;
@@ -305,7 +306,14 @@ export const WebhooksDataTable: React.FC<WebhooksDataTableProps> = ({
   });
 
   if (isLoading) {
-    return <div className="text-center py-8">Loading webhooks...</div>;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-[180px] bg-muted animate-pulse rounded-md" />
+        </div>
+        <TableSkeleton rows={5} columns={6} />
+      </div>
+    );
   }
 
   if (isError) {

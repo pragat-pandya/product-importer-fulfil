@@ -1,5 +1,6 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/sonner';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -16,21 +17,35 @@ const queryClient = new QueryClient({
   },
 });
 
+function AnimatedRoutes() {
+  const location = useLocation();
+  
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/upload" element={<Upload />} />
+        <Route path="/products" element={<Products />} />
+        <Route path="/webhooks" element={<Webhooks />} />
+        <Route path="/tasks" element={<div className="p-8">Tasks Page - Coming Soon</div>} />
+        <Route path="/settings" element={<div className="p-8">Settings Page - Coming Soon</div>} />
+      </Routes>
+    </AnimatePresence>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
         <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/upload" element={<Upload />} />
-            <Route path="/products" element={<Products />} />
-            <Route path="/webhooks" element={<Webhooks />} />
-            <Route path="/tasks" element={<div>Tasks Page - Coming Soon</div>} />
-            <Route path="/settings" element={<div>Settings Page - Coming Soon</div>} />
-          </Routes>
+          <AnimatedRoutes />
         </Layout>
-        <Toaster />
+        <Toaster 
+          position="top-right"
+          richColors
+          closeButton
+        />
       </Router>
     </QueryClientProvider>
   );

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Activity, Upload, Package, TrendingUp } from 'lucide-react';
+import { PageTransition } from '@/components/PageTransition';
 
 const stats = [
   {
@@ -34,7 +35,8 @@ const stats = [
 
 export function Dashboard() {
   return (
-    <div className="space-y-6">
+    <PageTransition>
+    <div className="space-y-6 p-4 md:p-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
@@ -88,6 +90,7 @@ export function Dashboard() {
         </div>
       </div>
     </div>
+    </PageTransition>
   );
 }
 

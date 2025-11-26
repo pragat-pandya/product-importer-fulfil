@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Package, Trash2, AlertTriangle } from 'lucide-react';
+import { PageTransition } from '@/components/PageTransition';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -137,7 +138,8 @@ const Products: React.FC = () => {
   const hasActiveFilters = skuFilter || nameFilter || activeFilter !== undefined;
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <PageTransition>
+    <div className="flex-1 space-y-6 p-4 md:p-8 pt-4 md:pt-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -394,6 +396,7 @@ const Products: React.FC = () => {
         onOpenChange={setEditDialogOpen}
       />
     </div>
+    </PageTransition>
   );
 };
 
