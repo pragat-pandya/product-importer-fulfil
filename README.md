@@ -25,7 +25,7 @@ docker-compose exec backend alembic upgrade head
 # Access the application
 # Frontend: http://localhost:5173
 # Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
+# API Docs: http://localhost:8000/api/docs
 ```
 
 ---
@@ -389,7 +389,7 @@ MIT License
 
 For issues or questions:
 - Check documentation: [BACKEND_DOCS.md](./BACKEND_DOCS.md) | [FRONTEND_DOCS.md](./FRONTEND_DOCS.md)
-- Review API docs: http://localhost:8000/docs
+- Review API docs: http://localhost:8000/api/docs
 - Check logs: `docker-compose logs -f`
 
 ---
