@@ -167,6 +167,66 @@ fulFil/
 └── README.md              # This file
 ```
 
+## API Endpoints
+
+### Product CRUD
+
+Full CRUD operations for products with pagination, filtering, and bulk operations.
+
+| Method | Endpoint                            | Description                          |
+|--------|-------------------------------------|--------------------------------------|
+| GET    | `/products`                         | List products (paginated, filtered)  |
+| GET    | `/products/{id}`                    | Get product by ID                    |
+| POST   | `/products`                         | Create a new product                 |
+| PUT    | `/products/{id}`                    | Update a product                     |
+| DELETE | `/products/{id}`                    | Delete a product                     |
+| DELETE | `/products/all`                     | Bulk delete (Celery task)            |
+| GET    | `/products/delete/{task_id}/status` | Check bulk delete status             |
+
+**Features:**
+- ✅ Pagination with `limit` and `offset`
+- ✅ Filtering by `sku`, `name`, `active`
+- ✅ Case-insensitive SKU uniqueness
+- ✅ Background bulk delete via Celery
+
+See [CRUD_ENDPOINTS.md](./CRUD_ENDPOINTS.md) for complete API documentation.
+
+### CSV Import
+
+| Method | Endpoint                              | Description                    |
+|--------|---------------------------------------|--------------------------------|
+| POST   | `/products/upload`                    | Upload CSV file                |
+| GET    | `/products/upload/{task_id}/status`   | Get import status (polling)    |
+| GET    | `/products/import/{task_id}/progress` | Get detailed progress          |
+| GET    | `/products/import/{task_id}/result`   | Get final import results       |
+
+**Features:**
+- ✅ Chunked CSV processing (1000 rows/chunk)
+- ✅ Case-insensitive SKU upsert
+- ✅ Real-time progress tracking via Redis
+- ✅ Background processing via Celery
+- ✅ Detailed error reporting
+
+### Testing
+
+Run the comprehensive test suite:
+
+```bash
+# Test CRUD endpoints
+./scripts/test_crud.sh
+
+# Verify services
+docker-compose ps
+curl http://localhost:8000/api/v1/hello | jq '.'
+```
+
+### Interactive API Documentation
+
+FastAPI provides auto-generated interactive documentation:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
 ## Environment Variables
 
 See `.env.example` for all available configuration options.

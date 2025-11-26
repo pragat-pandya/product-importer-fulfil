@@ -2,19 +2,30 @@
 Product API Routes
 """
 import os
+import json
 import shutil
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
-from uuid import uuid4
+from uuid import uuid4, UUID
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 import redis
+from celery.result import AsyncResult
 
 from config import settings
-from app.tasks.product_tasks import process_csv_upload
+from app.tasks.product_tasks import process_csv_upload, bulk_delete_products
+from app.db.session import get_db
+from app.services.product_service import ProductService
+from app.schemas.product_schema import (
+    ProductCreate,
+    ProductUpdate,
+    ProductResponse,
+    ProductListResponse,
+)
 
 
 router = APIRouter(prefix="/products", tags=["Products"])
@@ -104,6 +115,9 @@ async def upload_csv(
     if file_size == 0:
         raise HTTPException(status_code=400, detail="File is empty")
     
+    # Initialize file_path before try block
+    file_path = None
+    
     try:
         # Generate unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -130,7 +144,7 @@ async def upload_csv(
         
     except Exception as e:
         # Clean up file if task submission failed
-        if file_path.exists():
+        if file_path and file_path.exists():
             file_path.unlink()
         
         raise HTTPException(
@@ -159,7 +173,6 @@ async def get_import_progress(task_id: str) -> ImportProgressResponse:
         progress_data = redis_client.get(progress_key)
         
         if progress_data:
-            import json
             data = json.loads(progress_data)
             return ImportProgressResponse(**data)
         
@@ -244,7 +257,6 @@ async def get_upload_status(task_id: str) -> TaskStatusResponse:
             progress_data = redis_client.get(progress_key)
             
             if progress_data:
-                import json
                 data = json.loads(progress_data)
                 
                 # Map Celery status to simplified state
@@ -278,10 +290,9 @@ async def get_upload_status(task_id: str) -> TaskStatusResponse:
             print(f"⚠️  Invalid JSON in Redis: {e}")
         
         # Fallback to Celery result backend
-        from celery.result import AsyncResult
-        
         try:
-            task_result = AsyncResult(task_id, app=process_csv_upload.app)
+            from app.core.celery_app import celery_app
+            task_result = AsyncResult(task_id, app=celery_app)
             
             # Map Celery states to simplified states
             if task_result.state == 'PENDING':
@@ -390,8 +401,8 @@ async def get_import_result(task_id: str) -> Dict[str, Any]:
         Import results and statistics
     """
     try:
-        from celery.result import AsyncResult
-        task_result = AsyncResult(task_id, app=process_csv_upload.app)
+        from app.core.celery_app import celery_app
+        task_result = AsyncResult(task_id, app=celery_app)
         
         if not task_result.ready():
             raise HTTPException(
@@ -416,5 +427,317 @@ async def get_import_result(task_id: str) -> Dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get result: {str(e)}"
+        )
+
+
+# ============================================================================
+# CRUD ENDPOINTS
+# ============================================================================
+
+@router.get("", response_model=ProductListResponse, summary="List Products")
+async def list_products(
+    limit: int = Query(default=20, ge=1, le=100, description="Number of items per page"),
+    offset: int = Query(default=0, ge=0, description="Number of items to skip"),
+    sku: Optional[str] = Query(default=None, description="Filter by SKU (partial match)"),
+    name: Optional[str] = Query(default=None, description="Filter by name (partial match)"),
+    active: Optional[bool] = Query(default=None, description="Filter by active status"),
+    db_session: AsyncSession = Depends(get_db),
+) -> ProductListResponse:
+    """
+    Get a paginated list of products with optional filtering.
+    
+    Supports:
+    - **Pagination**: Use `limit` and `offset` parameters
+    - **Filtering**: By SKU, name, or active status
+    - **Case-insensitive search**: SKU and name filters are case-insensitive
+    
+    Args:
+        limit: Number of products to return (1-100, default: 20)
+        offset: Number of products to skip (default: 0)
+        sku: Optional SKU filter (case-insensitive partial match)
+        name: Optional name filter (case-insensitive partial match)
+        active: Optional active status filter (true/false)
+        db_session: Database session (injected)
+        
+    Returns:
+        Paginated list of products with total count
+        
+    Example:
+        GET /products?limit=10&offset=0&active=true&name=widget
+    """
+    service = ProductService(db_session)
+    
+    products, total = await service.get_products(
+        limit=limit,
+        offset=offset,
+        sku=sku,
+        name=name,
+        active=active,
+    )
+    
+    # Convert to response models
+    product_responses = [ProductResponse.model_validate(p) for p in products]
+    
+    return ProductListResponse(
+        items=product_responses,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + limit) < total,
+    )
+
+
+@router.post("", response_model=ProductResponse, status_code=201, summary="Create Product")
+async def create_product(
+    product_data: ProductCreate,
+    db_session: AsyncSession = Depends(get_db),
+) -> ProductResponse:
+    """
+    Create a new product.
+    
+    The SKU must be unique (case-insensitive). If a product with the same SKU
+    already exists, a 409 Conflict error will be returned.
+    
+    Args:
+        product_data: Product data to create
+        db_session: Database session (injected)
+        
+    Returns:
+        Created product
+        
+    Raises:
+        HTTPException 409: If SKU already exists
+        
+    Example:
+        POST /products
+        {
+            "sku": "WIDGET-001",
+            "name": "Premium Widget",
+            "description": "High-quality widget",
+            "active": true
+        }
+    """
+    service = ProductService(db_session)
+    product = await service.create_product(product_data)
+    return ProductResponse.model_validate(product)
+
+
+@router.get("/{product_id}", response_model=ProductResponse, summary="Get Product by ID")
+async def get_product(
+    product_id: UUID,
+    db_session: AsyncSession = Depends(get_db),
+) -> ProductResponse:
+    """
+    Get a single product by its ID.
+    
+    Args:
+        product_id: Product UUID
+        db_session: Database session (injected)
+        
+    Returns:
+        Product details
+        
+    Raises:
+        HTTPException 404: If product not found
+        
+    Example:
+        GET /products/123e4567-e89b-12d3-a456-426614174000
+    """
+    service = ProductService(db_session)
+    product = await service.get_product_by_id(product_id)
+    return ProductResponse.model_validate(product)
+
+
+@router.put("/{product_id}", response_model=ProductResponse, summary="Update Product")
+async def update_product(
+    product_id: UUID,
+    product_data: ProductUpdate,
+    db_session: AsyncSession = Depends(get_db),
+) -> ProductResponse:
+    """
+    Update an existing product.
+    
+    Only the fields provided in the request body will be updated.
+    Other fields will remain unchanged.
+    
+    If updating the SKU, the new SKU must be unique (case-insensitive).
+    
+    Args:
+        product_id: Product UUID to update
+        product_data: Product data to update (partial update supported)
+        db_session: Database session (injected)
+        
+    Returns:
+        Updated product
+        
+    Raises:
+        HTTPException 404: If product not found
+        HTTPException 409: If new SKU already exists
+        
+    Example:
+        PUT /products/123e4567-e89b-12d3-a456-426614174000
+        {
+            "name": "Updated Widget Name",
+            "active": false
+        }
+    """
+    service = ProductService(db_session)
+    product = await service.update_product(product_id, product_data)
+    return ProductResponse.model_validate(product)
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response model for bulk delete operation."""
+    task_id: str
+    status: str
+    message: str
+
+
+@router.delete("/all", response_model=BulkDeleteResponse, summary="Bulk Delete All Products")
+async def delete_all_products() -> BulkDeleteResponse:
+    """
+    Delete all products in the database as a background task.
+    
+    This operation is performed asynchronously via a Celery task to avoid
+    blocking the API for large datasets. Use the task ID to monitor progress.
+    
+    ⚠️ **WARNING**: This operation cannot be undone!
+    
+    Returns:
+        Task ID and status for monitoring the deletion progress
+        
+    Example:
+        DELETE /products/all
+        
+    Response:
+        {
+            "task_id": "abc123...",
+            "status": "submitted",
+            "message": "Bulk delete task submitted. Use task ID to monitor progress."
+        }
+        
+    To check progress:
+        GET /products/delete/{task_id}/status
+    """
+    # Trigger Celery task for bulk delete
+    task = bulk_delete_products.apply_async()
+    
+    return BulkDeleteResponse(
+        task_id=task.id,
+        status="submitted",
+        message="Bulk delete task submitted. Use task ID to monitor progress.",
+    )
+
+
+@router.delete("/{product_id}", status_code=204, summary="Delete Product")
+async def delete_product(
+    product_id: UUID,
+    db_session: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Delete a single product by its ID.
+    
+    Args:
+        product_id: Product UUID to delete
+        db_session: Database session (injected)
+        
+    Returns:
+        No content (204 status)
+        
+    Raises:
+        HTTPException 404: If product not found
+        
+    Example:
+        DELETE /products/123e4567-e89b-12d3-a456-426614174000
+    """
+    service = ProductService(db_session)
+    await service.delete_product(product_id)
+
+
+@router.get("/delete/{task_id}/status", summary="Get Bulk Delete Task Status")
+async def get_bulk_delete_status(task_id: str) -> Dict[str, Any]:
+    """
+    Get the status of a bulk delete task.
+    
+    Args:
+        task_id: The Celery task ID from the bulk delete operation
+        
+    Returns:
+        Current task status with progress information
+        
+    Example:
+        GET /products/delete/{task_id}/status
+    """
+    try:
+        # Initialize Redis client
+        redis_client = redis.from_url(str(settings.REDIS_URL))
+        progress_key = f"celery-task-progress:{task_id}"
+        
+        # Try to get progress data from Redis
+        try:
+            progress_data = redis_client.get(progress_key)
+            
+            if progress_data:
+                data = json.loads(progress_data)
+                return {
+                    "task_id": task_id,
+                    "status": data.get('status', 'PENDING'),
+                    "message": data.get('message', 'Processing...'),
+                    "percent": data.get('percent', 0),
+                    "deleted_count": data.get('deleted_count'),
+                    "error": data.get('error'),
+                }
+        except (redis.RedisError, json.JSONDecodeError) as e:
+            print(f"⚠️  Redis error: {e}")
+        
+        # Fallback to Celery result backend
+        from app.core.celery_app import celery_app
+        task_result = AsyncResult(task_id, app=celery_app)
+        
+        if task_result.state == 'PENDING':
+            return {
+                "task_id": task_id,
+                "status": "PENDING",
+                "message": "Task is queued and waiting to start",
+                "percent": 0,
+            }
+        elif task_result.state == 'PROGRESS':
+            meta = task_result.info or {}
+            return {
+                "task_id": task_id,
+                "status": "PROGRESS",
+                "message": meta.get('message', 'Deleting products...'),
+                "percent": meta.get('percent', 0),
+            }
+        elif task_result.state == 'SUCCESS':
+            result = task_result.result or {}
+            return {
+                "task_id": task_id,
+                "status": "SUCCESS",
+                "message": result.get('message', 'Bulk delete completed'),
+                "percent": 100,
+                "deleted_count": result.get('deleted_count', 0),
+            }
+        elif task_result.state == 'FAILURE':
+            error_info = str(task_result.info) if task_result.info else 'Unknown error'
+            return {
+                "task_id": task_id,
+                "status": "FAILURE",
+                "message": "Bulk delete failed",
+                "error": error_info,
+                "percent": 0,
+            }
+        else:
+            return {
+                "task_id": task_id,
+                "status": task_result.state,
+                "message": f"Task in {task_result.state} state",
+                "percent": 0,
+            }
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get task status: {str(e)}"
         )
 

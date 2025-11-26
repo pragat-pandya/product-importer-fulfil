@@ -217,3 +217,140 @@ def cleanup_old_imports(self) -> Dict[str, Any]:
         "records_deleted": 0,
     }
 
+
+@celery_app.task(
+    bind=True,
+    base=DatabaseTask,
+    name="app.tasks.product_tasks.bulk_delete_products",
+    max_retries=2,
+    default_retry_delay=60,  # 1 minute
+    time_limit=1800,  # 30 minutes
+    soft_time_limit=1650,  # 27.5 minutes
+)
+def bulk_delete_products(self) -> Dict[str, Any]:
+    """
+    Delete all products in the database as a background task.
+    
+    This is a long-running task that should be used when deleting
+    a large number of products to avoid blocking the API.
+    
+    Features:
+    - Progress tracking in Redis
+    - Transaction handling for data integrity
+    - Error recovery and retry logic
+    
+    Returns:
+        Dict with deletion results
+    """
+    # Initialize Redis for progress tracking
+    redis_client = redis.from_url(str(settings.REDIS_URL))
+    task_id = self.request.id
+    progress_key = f"celery-task-progress:{task_id}"
+    
+    try:
+        # Initialize progress
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "task_id": task_id,
+                "status": "PROGRESS",
+                "message": "Initializing bulk delete...",
+                "percent": 0,
+            }
+        )
+        
+        redis_client.setex(
+            progress_key,
+            3600,
+            json.dumps({
+                "task_id": task_id,
+                "status": "PROGRESS",
+                "message": "Counting products...",
+                "percent": 10,
+            })
+        )
+        
+        # Use asyncio to run the async database operations
+        import asyncio
+        from app.db.session import async_session_maker
+        from app.services.product_service import ProductService
+        
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        async def perform_bulk_delete():
+            """Async function to perform the bulk delete."""
+            async with async_session_maker() as db_session:
+                service = ProductService(db_session)
+                
+                # Count products first
+                total_count = await service.count_all_products()
+                
+                # Update progress
+                redis_client.setex(
+                    progress_key,
+                    3600,
+                    json.dumps({
+                        "task_id": task_id,
+                        "status": "PROGRESS",
+                        "message": f"Deleting {total_count} products...",
+                        "percent": 30,
+                        "total_count": total_count,
+                    })
+                )
+                
+                # Perform bulk delete
+                deleted_count = await service.delete_all_products()
+                
+                # Commit the transaction
+                await db_session.commit()
+                
+                return {
+                    "total_count": total_count,
+                    "deleted_count": deleted_count,
+                }
+        
+        result = loop.run_until_complete(perform_bulk_delete())
+        
+        # Final progress update
+        final_progress = {
+            "task_id": task_id,
+            "status": "SUCCESS",
+            "message": f"Successfully deleted {result['deleted_count']} products",
+            "percent": 100,
+            "deleted_count": result['deleted_count'],
+        }
+        redis_client.setex(progress_key, 3600, json.dumps(final_progress))
+        
+        return {
+            "status": "success",
+            "message": f"Successfully deleted {result['deleted_count']} products",
+            "task_id": task_id,
+            "deleted_count": result['deleted_count'],
+        }
+        
+    except Exception as exc:
+        # Log the error
+        error_msg = str(exc)
+        print(f"❌ Error in bulk delete: {error_msg}")
+        
+        # Update Redis with error
+        error_data = {
+            "task_id": task_id,
+            "status": "FAILURE",
+            "error": error_msg,
+            "message": "Bulk delete failed",
+        }
+        redis_client.setex(progress_key, 3600, json.dumps(error_data))
+        
+        # Retry the task if possible
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        else:
+            raise
+    finally:
+        redis_client.close()
+

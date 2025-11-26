@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { Upload } from './pages/Upload';
+import Products from './pages/Products';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,7 +23,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/upload" element={<Upload />} />
-            <Route path="/products" element={<div>Products Page - Coming Soon</div>} />
+            <Route path="/products" element={<Products />} />
             <Route path="/tasks" element={<div>Tasks Page - Coming Soon</div>} />
             <Route path="/settings" element={<div>Settings Page - Coming Soon</div>} />
           </Routes>
