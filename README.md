@@ -207,6 +207,34 @@ See [CRUD_ENDPOINTS.md](./CRUD_ENDPOINTS.md) for complete API documentation.
 - ✅ Background processing via Celery
 - ✅ Detailed error reporting
 
+### Webhook System
+
+| Method | Endpoint                              | Description                    |
+|--------|---------------------------------------|--------------------------------|
+| GET    | `/webhooks`                           | List webhooks (paginated)      |
+| GET    | `/webhooks/{id}`                      | Get webhook by ID              |
+| POST   | `/webhooks`                           | Create webhook                 |
+| PUT    | `/webhooks/{id}`                      | Update webhook                 |
+| DELETE | `/webhooks/{id}`                      | Delete webhook                 |
+| POST   | `/webhooks/{id}/test`                 | Test webhook delivery          |
+| GET    | `/webhooks/{id}/logs`                 | Get execution logs             |
+
+**Features:**
+- ✅ HTTP delivery with retry logic
+- ✅ HMAC SHA256 signature verification
+- ✅ Custom headers support
+- ✅ Execution logging and monitoring
+- ✅ Test endpoint with response time
+- ✅ Auto-trigger on product lifecycle events
+- ✅ Background execution via Celery
+- ✅ Configurable timeouts and retries
+
+**Events:**
+- `product.created`, `product.updated`, `product.deleted`
+- `import.started`, `import.completed`, `import.failed`
+
+See [WEBHOOK_SYSTEM.md](./WEBHOOK_SYSTEM.md) for complete webhook documentation.
+
 ### Testing
 
 Run the comprehensive test suite:

@@ -20,6 +20,7 @@ def create_celery_app() -> Celery:
         backend=settings.CELERY_RESULT_BACKEND,
         include=[
             "app.tasks.product_tasks",
+            "app.tasks.webhook_tasks",
             # Add more task modules here as needed
         ]
     )

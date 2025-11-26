@@ -56,9 +56,13 @@ class ProductService:
         )
         return products, total
     
-    async def create_product(self, product_data: ProductCreate) -> Product:
+    async def create_product(self, product_data: ProductCreate, trigger_webhooks: bool = True) -> Product:
         """
         Create a new product.
+        
+        Args:
+            product_data: Product data to create
+            trigger_webhooks: Whether to trigger webhook events (default: True)
         
         Raises:
             HTTPException: If SKU already exists.
@@ -72,11 +76,31 @@ class ProductService:
             )
         
         product = await self.repository.create(product_data)
+        
+        # Trigger webhooks asynchronously
+        if trigger_webhooks:
+            from app.tasks.webhook_tasks import trigger_webhooks_for_event
+            trigger_webhooks_for_event.apply_async(
+                args=["product.created", {
+                    "id": str(product.id),
+                    "sku": product.sku,
+                    "name": product.name,
+                    "description": product.description,
+                    "active": product.active,
+                    "created_at": product.created_at.isoformat(),
+                }]
+            )
+        
         return product
     
-    async def update_product(self, product_id: UUID, product_data: ProductUpdate) -> Product:
+    async def update_product(self, product_id: UUID, product_data: ProductUpdate, trigger_webhooks: bool = True) -> Product:
         """
         Update an existing product.
+        
+        Args:
+            product_id: Product ID to update
+            product_data: Product data to update
+            trigger_webhooks: Whether to trigger webhook events (default: True)
         
         Raises:
             HTTPException: If product not found or SKU already exists.
@@ -94,17 +118,51 @@ class ProductService:
                 )
         
         updated_product = await self.repository.update(product, product_data)
+        
+        # Trigger webhooks asynchronously
+        if trigger_webhooks:
+            from app.tasks.webhook_tasks import trigger_webhooks_for_event
+            trigger_webhooks_for_event.apply_async(
+                args=["product.updated", {
+                    "id": str(updated_product.id),
+                    "sku": updated_product.sku,
+                    "name": updated_product.name,
+                    "description": updated_product.description,
+                    "active": updated_product.active,
+                    "updated_at": updated_product.updated_at.isoformat(),
+                }]
+            )
+        
         return updated_product
     
-    async def delete_product(self, product_id: UUID) -> None:
+    async def delete_product(self, product_id: UUID, trigger_webhooks: bool = True) -> None:
         """
         Delete a product.
+        
+        Args:
+            product_id: Product ID to delete
+            trigger_webhooks: Whether to trigger webhook events (default: True)
         
         Raises:
             HTTPException: If product not found.
         """
         product = await self.get_product_by_id(product_id)
+        
+        # Store product data before deletion for webhook
+        product_data = {
+            "id": str(product.id),
+            "sku": product.sku,
+            "name": product.name,
+        }
+        
         await self.repository.delete(product)
+        
+        # Trigger webhooks asynchronously
+        if trigger_webhooks:
+            from app.tasks.webhook_tasks import trigger_webhooks_for_event
+            trigger_webhooks_for_event.apply_async(
+                args=["product.deleted", product_data]
+            )
     
     async def delete_all_products(self) -> int:
         """
