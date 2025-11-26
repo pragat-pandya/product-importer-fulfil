@@ -1,8 +1,9 @@
 """
 Application Configuration using Pydantic Settings
 """
+import json
 from typing import Optional
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import Field, PostgresDsn, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +35,22 @@ class Settings(BaseSettings):
         default=["http://localhost:3000", "http://localhost:5173"],
         description="Allowed CORS origins"
     )
+    
+    @field_validator('CORS_ORIGINS', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """Parse CORS_ORIGINS from JSON string or comma-separated string"""
+        if isinstance(v, str):
+            # Try parsing as JSON first
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                # If not JSON, try comma-separated
+                if ',' in v:
+                    return [origin.strip() for origin in v.split(',')]
+                # Single value
+                return [v.strip()]
+        return v
     
     # Celery Settings
     CELERY_BROKER_URL: Optional[str] = None
