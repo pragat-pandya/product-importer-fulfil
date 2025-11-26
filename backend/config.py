@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     
     # CORS Settings
     CORS_ORIGINS: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
+        default=["http://localhost:3000", "http://localhost:5173", "https://fulfil.buzzline.dev"],
         description="Allowed CORS origins"
     )
     
