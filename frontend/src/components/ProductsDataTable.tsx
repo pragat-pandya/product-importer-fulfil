@@ -46,8 +46,8 @@ interface ProductsDataTableProps {
 }
 
 const ProductsDataTable: React.FC<ProductsDataTableProps> = ({
-  products,
-  total,
+  products = [],
+  total = 0,
   limit,
   offset,
   onPageChange,

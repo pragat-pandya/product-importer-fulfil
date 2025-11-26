@@ -375,19 +375,17 @@ const Products: React.FC = () => {
       )}
 
       {/* Data Table */}
-      {productsData && (
-        <ProductsDataTable
-          products={productsData.items}
-          total={productsData.total}
-          limit={pageSize}
-          offset={page * pageSize}
-          onPageChange={handlePageChange}
-          onPageSizeChange={handlePageSizeChange}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          isLoading={isLoading}
-        />
-      )}
+      <ProductsDataTable
+        products={productsData?.items || []}
+        total={productsData?.total || 0}
+        limit={pageSize}
+        offset={page * pageSize}
+        onPageChange={handlePageChange}
+        onPageSizeChange={handlePageSizeChange}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        isLoading={isLoading}
+      />
 
       {/* Edit Dialog */}
       <EditProductDialog
