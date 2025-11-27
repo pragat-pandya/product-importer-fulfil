@@ -26,6 +26,8 @@ export function ProductUpload() {
   const [status, setStatus] = useState<UploadStatus | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const taskIdRef = useRef<string | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsMessageReceivedRef = useRef<boolean>(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
@@ -60,6 +62,54 @@ export function ProductUpload() {
     multiple: false,
   });
 
+  // Fallback polling function if WebSocket fails
+  const startPolling = (taskId: string) => {
+    // Clear any existing polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+
+    // Poll every 1 second
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await api.get<UploadStatus>(`/products/upload/${taskId}/status`);
+        const newStatus = response.data;
+        console.log('Polling status:', newStatus);
+        setStatus(newStatus);
+
+        // Stop polling if completed or failed
+        if (newStatus.state === 'Completed' || newStatus.state === 'Failed') {
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          setUploading(false);
+
+          if (newStatus.state === 'Completed') {
+            toast.success('Import completed', {
+              description: `Created: ${newStatus.created}, Updated: ${newStatus.updated}, Errors: ${newStatus.errors}`,
+            });
+          } else {
+            toast.error('Import failed', {
+              description: newStatus.error || 'An error occurred during import',
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 1000);
+
+    // Initial poll
+    api.get<UploadStatus>(`/products/upload/${taskId}/status`)
+      .then(response => {
+        setStatus(response.data);
+      })
+      .catch(error => {
+        console.error('Initial poll error:', error);
+      });
+  };
+
   const connectWebSocket = (taskId: string) => {
     // Close existing connection if any
     if (wsRef.current) {
@@ -81,17 +131,49 @@ export function ProductUpload() {
     const host = apiBaseUrl.replace(/^https?:\/\//, '');
     const wsUrl = `${wsProtocol}://${host}/api/v1/ws/task/${taskId}`;
     
+    console.log('Connecting to WebSocket:', wsUrl);
+    console.log('API Base URL:', apiBaseUrl);
+    console.log('Task ID:', taskId);
+    
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     taskIdRef.current = taskId;
 
     ws.onopen = () => {
       console.log('WebSocket connected for task:', taskId);
+      wsMessageReceivedRef.current = false; // Reset flag
+      // Update status to show connection is established
+      setStatus(prev => prev ? {
+        ...prev,
+        state: 'Processing',
+        message: 'Processing CSV file...',
+      } : null);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      // Fallback to polling if WebSocket fails
+      console.log('WebSocket failed, falling back to polling for task:', taskId);
+      startPolling(taskId);
+      setStatus(prev => prev ? {
+        ...prev,
+        message: 'WebSocket connection failed, using fallback polling...',
+      } : null);
     };
 
     ws.onmessage = (event) => {
       try {
+        console.log('WebSocket message received:', event.data);
+        wsMessageReceivedRef.current = true; // Mark that we received a message
         const data = JSON.parse(event.data);
+        console.log('Parsed WebSocket data:', data);
+        
+        // Stop polling if WebSocket is working
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+          console.log('Stopped polling, WebSocket is working');
+        }
         
         // Map backend status to frontend status
         const mappedStatus: UploadStatus = {
@@ -109,6 +191,7 @@ export function ProductUpload() {
           error: data.error,
         };
 
+        console.log('Mapped status:', mappedStatus);
         setStatus(mappedStatus);
 
         // Handle completion
@@ -136,13 +219,19 @@ export function ProductUpload() {
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket closed');
+    ws.onclose = (event) => {
+      console.log('WebSocket closed:', event.code, event.reason);
       wsRef.current = null;
+      
+      // If closed unexpectedly and still uploading, fallback to polling
+      if (uploading && event.code !== 1000) {
+        console.log('WebSocket closed unexpectedly, falling back to polling');
+        startPolling(taskId);
+        setStatus(prev => prev ? {
+          ...prev,
+          message: 'Connection lost, using polling...',
+        } : null);
+      }
     };
   };
 
@@ -150,7 +239,15 @@ export function ProductUpload() {
     if (!file) return;
 
     setUploading(true);
-    setStatus(null);
+    
+    // Set initial status to show progress bar immediately
+    setStatus({
+      task_id: '',
+      state: 'Pending',
+      progress_percent: 0,
+      current: 0,
+      total: 0,
+    });
 
     try {
       // Upload file
@@ -170,10 +267,30 @@ export function ProductUpload() {
 
       const { task_id } = response.data;
 
+      // Update status with task_id
+      setStatus({
+        task_id,
+        state: 'Pending',
+        progress_percent: 0,
+        current: 0,
+        total: 0,
+        message: 'Uploading file...',
+      });
+
       // Connect to WebSocket for real-time updates
       connectWebSocket(task_id);
+      
+      // Also start polling as a fallback (will be stopped if WebSocket works)
+      // Give WebSocket 3 seconds to connect and receive messages, then start polling if no messages received
+      setTimeout(() => {
+        if (!wsMessageReceivedRef.current) {
+          console.log('WebSocket may not be working (no messages received), starting polling fallback');
+          startPolling(task_id);
+        }
+      }, 3000);
     } catch (error: any) {
       setUploading(false);
+      setStatus(null);
       toast.error('Upload failed', {
         description: error.response?.data?.detail || error.message || 'Failed to upload file',
       });
@@ -186,17 +303,25 @@ export function ProductUpload() {
       wsRef.current.close();
       wsRef.current = null;
     }
+    // Clear polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
     taskIdRef.current = null;
     setFile(null);
     setStatus(null);
     setUploading(false);
   };
 
-  // Cleanup WebSocket on unmount
+  // Cleanup WebSocket and polling on unmount
   useEffect(() => {
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
+      }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
       }
     };
   }, []);
@@ -320,9 +445,9 @@ export function ProductUpload() {
         )}
       </AnimatePresence>
 
-      {/* Progress & Status */}
+      {/* Progress & Status - Show when uploading or status exists */}
       <AnimatePresence>
-        {status && (
+        {(status || uploading) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -335,36 +460,40 @@ export function ProductUpload() {
                 {getStatusIcon()}
                 <h3 className="font-semibold">Import Status</h3>
               </div>
-              <Badge variant={getStatusBadgeVariant()}>{status.state}</Badge>
+              <Badge variant={getStatusBadgeVariant()}>
+                {status?.state || (uploading ? 'Uploading' : 'Pending')}
+              </Badge>
             </div>
 
-            {/* Progress Bar */}
-            {(status.state === 'Processing' || status.state === 'Pending') && (
+            {/* Progress Bar - Always show when uploading or processing */}
+            {((status?.state === 'Processing' || status?.state === 'Pending') || 
+              uploading ||
+              (status?.progress_percent !== undefined && status.progress_percent < 100)) && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Progress</span>
-                  <span className="font-medium">{status.progress_percent || 0}%</span>
+                  <span className="font-medium">{status?.progress_percent ?? 0}%</span>
                 </div>
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                 >
                   <Progress
-                    value={status.progress_percent || 0}
+                    value={status?.progress_percent ?? 0}
                     className="h-2"
                   />
                 </motion.div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>
-                    {status.current || 0} / {status.total || 0} rows
+                    {status?.current ?? 0} / {status?.total ?? 0} rows
                   </span>
-                  <span>{status.message}</span>
+                  <span>{status?.message || (uploading ? 'Uploading file...' : 'Waiting...')}</span>
                 </div>
               </div>
             )}
 
             {/* Stats */}
-            {status.state === 'Completed' && (
+            {status?.state === 'Completed' && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -386,14 +515,14 @@ export function ProductUpload() {
             )}
 
             {/* Error Message */}
-            {status.state === 'Failed' && status.error && (
+            {status?.state === 'Failed' && status?.error && (
               <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
                 <p className="text-sm text-destructive">{status.error}</p>
               </div>
             )}
 
             {/* Reset Button */}
-            {(status.state === 'Completed' || status.state === 'Failed') && (
+            {(status?.state === 'Completed' || status?.state === 'Failed') && (
               <button
                 onClick={handleReset}
                 className="w-full px-6 py-3 rounded-lg font-medium border hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"

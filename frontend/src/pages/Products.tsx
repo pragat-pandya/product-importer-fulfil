@@ -63,6 +63,11 @@ const Products: React.FC = () => {
     return () => clearTimeout(timer);
   }, [nameFilter]);
 
+  // Reset page to 0 when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSkuFilter, debouncedNameFilter, activeFilter]);
+
   // API Hooks
   const {
     data: productsData,
