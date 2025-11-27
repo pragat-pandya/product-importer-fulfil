@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, FileText, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
@@ -24,7 +24,8 @@ export function ProductUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<UploadStatus | null>(null);
-  const [pollingInterval, setPollingInterval] = useState<ReturnType<typeof setInterval> | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const taskIdRef = useRef<string | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const selectedFile = acceptedFiles[0];
@@ -48,9 +49,6 @@ export function ProductUpload() {
 
       setFile(selectedFile);
       setStatus(null);
-      toast.success('File selected', {
-        description: selectedFile.name,
-      });
     }
   }, []);
 
@@ -62,32 +60,90 @@ export function ProductUpload() {
     multiple: false,
   });
 
-  const pollStatus = async (taskId: string) => {
-    try {
-      const response = await api.get<UploadStatus>(`/products/upload/${taskId}/status`);
-      const newStatus = response.data;
-      setStatus(newStatus);
-
-      // Stop polling if completed or failed
-      if (newStatus.state === 'Completed' || newStatus.state === 'Failed') {
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-        }
-        setUploading(false);
-
-        if (newStatus.state === 'Completed') {
-          toast.success('Import completed successfully!', {
-            description: `Created: ${newStatus.created}, Updated: ${newStatus.updated}, Errors: ${newStatus.errors}`,
-          });
-        } else {
-          toast.error('Import failed', {
-            description: newStatus.error || 'An error occurred during import',
-          });
-        }
-      }
-    } catch (error) {
+  const connectWebSocket = (taskId: string) => {
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
     }
+
+    // Get WebSocket URL
+    let apiBaseUrl = import.meta.env.VITE_API_URL;
+    if (!apiBaseUrl) {
+      // Fallback to current origin
+      apiBaseUrl = window.location.origin;
+    }
+    
+    // Remove trailing slash if present
+    apiBaseUrl = apiBaseUrl.replace(/\/$/, '');
+    
+    // Determine protocol
+    const wsProtocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws';
+    const host = apiBaseUrl.replace(/^https?:\/\//, '');
+    const wsUrl = `${wsProtocol}://${host}/api/v1/ws/task/${taskId}`;
+    
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+    taskIdRef.current = taskId;
+
+    ws.onopen = () => {
+      console.log('WebSocket connected for task:', taskId);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Map backend status to frontend status
+        const mappedStatus: UploadStatus = {
+          task_id: data.task_id || taskId,
+          state: data.status === 'SUCCESS' ? 'Completed' : 
+                 data.status === 'FAILURE' ? 'Failed' :
+                 data.status === 'PROGRESS' ? 'Processing' : 'Pending',
+          progress_percent: data.percent,
+          current: data.current,
+          total: data.total,
+          created: data.created,
+          updated: data.updated,
+          errors: data.errors,
+          message: data.message,
+          error: data.error,
+        };
+
+        setStatus(mappedStatus);
+
+        // Handle completion
+        if (mappedStatus.state === 'Completed' || mappedStatus.state === 'Failed') {
+          setUploading(false);
+          if (mappedStatus.state === 'Completed') {
+            toast.success('Import completed', {
+              description: `Created: ${mappedStatus.created}, Updated: ${mappedStatus.updated}, Errors: ${mappedStatus.errors}`,
+            });
+          } else {
+            toast.error('Import failed', {
+              description: mappedStatus.error || 'An error occurred during import',
+            });
+          }
+          // Close WebSocket after a delay
+          setTimeout(() => {
+            if (wsRef.current) {
+              wsRef.current.close();
+              wsRef.current = null;
+            }
+          }, 1000);
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket closed');
+      wsRef.current = null;
+    };
   };
 
   const handleUpload = async () => {
@@ -114,19 +170,8 @@ export function ProductUpload() {
 
       const { task_id } = response.data;
 
-      toast.info('Upload started', {
-        description: 'Processing your CSV file...',
-      });
-
-      // Start polling status every 1 second
-      const interval = setInterval(() => {
-        pollStatus(task_id);
-      }, 1000);
-
-      setPollingInterval(interval);
-
-      // Initial status check
-      pollStatus(task_id);
+      // Connect to WebSocket for real-time updates
+      connectWebSocket(task_id);
     } catch (error: any) {
       setUploading(false);
       toast.error('Upload failed', {
@@ -136,14 +181,25 @@ export function ProductUpload() {
   };
 
   const handleReset = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
+    // Close WebSocket connection
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
+    taskIdRef.current = null;
     setFile(null);
     setStatus(null);
     setUploading(false);
   };
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
 
   const getStatusBadgeVariant = () => {
     if (!status) return 'default';

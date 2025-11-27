@@ -72,9 +72,16 @@ class ImportService:
                     skipinitialspace=True,
                 ):
                     yield chunk
-            except (pd.errors.ParserError, ValueError) as e:
+            except Exception as e:
+                # Catch parsing errors - could be ParserError, CParserError, or ValueError
+                # Different pandas versions use different exception types
                 # If C engine fails, try Python engine which is more forgiving
                 # Python engine can handle inconsistent field counts better
+                # Only retry if it's likely a parsing error, not other exceptions
+                error_str = str(e).lower()
+                if 'parser' not in error_str and 'field' not in error_str and 'tokenizing' not in error_str:
+                    # Not a parsing error, re-raise
+                    raise
                 for chunk in pd.read_csv(
                     file_path,
                     chunksize=chunk_size,
@@ -115,7 +122,9 @@ class ImportService:
                     quotechar='"',
                     skipinitialspace=True,
                 )
-            except (pd.errors.ParserError, ValueError):
+            except Exception:
+                # Catch parsing errors - could be ParserError, CParserError, or ValueError
+                # Different pandas versions use different exception types
                 # Fallback to Python engine if C engine fails
                 df = pd.read_csv(
                     file_path,

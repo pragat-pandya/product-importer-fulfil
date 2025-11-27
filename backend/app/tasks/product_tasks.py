@@ -86,7 +86,7 @@ def process_csv_upload(
     progress_key = f"celery-task-progress:{task_id}"
     
     def update_progress(stats: Dict[str, Any]):
-        """Update progress in Redis and Celery state."""
+        """Update progress in Redis and Celery state, and publish to pub/sub."""
         progress_data = {
             "task_id": task_id,
             "status": "PROGRESS",
@@ -98,12 +98,18 @@ def process_csv_upload(
             "percent": int((stats['processed_rows'] / stats['total_rows'] * 100)) if stats['total_rows'] > 0 else 0,
         }
         
+        progress_json = json.dumps(progress_data)
+        
         # Store in Redis (expires in 1 hour)
         redis_client.setex(
             progress_key,
             3600,
-            json.dumps(progress_data)
+            progress_json
         )
+        
+        # Publish to Redis pub/sub for WebSocket clients
+        channel = f"task-progress:{task_id}"
+        redis_client.publish(channel, progress_json)
         
         # Update Celery state
         self.update_state(
@@ -157,7 +163,12 @@ def process_csv_upload(
             "errors": result['errors'],
             "percent": 100,
         }
-        redis_client.setex(progress_key, 3600, json.dumps(final_progress))
+        final_progress_json = json.dumps(final_progress)
+        redis_client.setex(progress_key, 3600, final_progress_json)
+        
+        # Publish final status to pub/sub
+        channel = f"task-progress:{task_id}"
+        redis_client.publish(channel, final_progress_json)
         
         # Clean up file after successful processing
         try:
@@ -184,7 +195,12 @@ def process_csv_upload(
             "status": "FAILURE",
             "error": error_msg,
         }
-        redis_client.setex(progress_key, 3600, json.dumps(error_data))
+        error_json = json.dumps(error_data)
+        redis_client.setex(progress_key, 3600, error_json)
+        
+        # Publish error to pub/sub
+        channel = f"task-progress:{task_id}"
+        redis_client.publish(channel, error_json)
         
         # Retry the task if possible
         if self.request.retries < self.max_retries:
